@@ -25,7 +25,7 @@ from app.subtitles.subtitle_selector import SubtitleSelector
 from app.subtitles.ytdlp_client import YtDlpSubtitleDownloader, YtDlpSubtitleError, YtDlpSubtitleNoFileError
 from app.worker.stable_worker import StableWorker
 APP_NAME = 'VidScribe'
-APP_VERSION = '0.7.1-stage7.1'
+APP_VERSION = '0.7.2'
 logger = logging.getLogger(__name__)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -53,7 +53,7 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
         json.dump(payload, file, ensure_ascii=False, indent=2, default=str)
         file.write('\n')
 
-def build_stage7_artifacts(paths: RunPaths, config: RunConfig) -> list[RunArtifact]:
+def build_run_artifacts(paths: RunPaths, config: RunConfig) -> list[RunArtifact]:
     artifacts = [RunArtifact(name='run.json', path=paths.relative_to_root(paths.run_json), description='Resolved run metadata and counters.'), RunArtifact(name='manifest.json', path=paths.relative_to_root(paths.manifest_json), description='Main manifest with query, counters, videos, transcript info and chunk info.'), RunArtifact(name='videos.csv', path=paths.relative_to_root(paths.videos_csv), description='Video candidates with processed/skipped/failed statuses and reasons.'), RunArtifact(name='state.sqlite', path=paths.relative_to_root(paths.state_db), description='SQLite state for stable runs, resume and attempt history.'), RunArtifact(name='metadata/', path=paths.relative_to_root(paths.metadata_dir), description='Raw yt-dlp metadata JSON files for videos with downloaded subtitles.'), RunArtifact(name='subtitles_raw/', path=paths.relative_to_root(paths.subtitles_raw_dir), description='Raw selected subtitle files downloaded through yt-dlp with --skip-download.'), RunArtifact(name='transcripts_clean/', path=paths.relative_to_root(paths.transcripts_clean_dir), description='Cleaned plain-text transcripts generated from raw subtitle files.'), RunArtifact(name='chunks/chunks.jsonl', path=paths.relative_to_root(paths.chunks_jsonl), description='RAG-ready JSONL chunks generated from clean transcripts.')]
     if config.output.build_summary_md:
         artifacts.append(RunArtifact(name='summary_input.md', path=paths.relative_to_root(paths.summary_input_md), description='Human-readable research input file with run context, video table and clean transcripts.'))
@@ -155,11 +155,11 @@ def build_final_artifacts(*, config: RunConfig, paths: RunPaths, decisions: list
     if config.output.build_summary_md:
         write_summary_input_md(paths.summary_input_md, config=config, paths=paths, created_at=created_at, decisions=decisions, transcript_documents=transcript_documents, chunks=chunks, counters=counters)
         logger.info('summary_input.md written: %s', paths.summary_input_md)
-    artifacts = build_stage7_artifacts(paths, config)
-    manifest = build_manifest(config=config, paths=paths, created_at=created_at, decisions=decisions, artifacts=artifacts, transcript_documents=transcript_documents, chunks=chunks, stage='stage_7_1')
+    artifacts = build_run_artifacts(paths, config)
+    manifest = build_manifest(config=config, paths=paths, created_at=created_at, decisions=decisions, artifacts=artifacts, transcript_documents=transcript_documents, chunks=chunks)
     manifest['status'] = status
     write_json(paths.manifest_json, manifest)
-    state = RunState(run_id=paths.run_id, project_name=config.project_name, status=status, stage='stage_7_1', created_at=created_at, config_path=config_path, cli_overrides=cli_overrides, output_root=str(paths.root), config=config.model_dump(mode='json'), artifacts=artifacts, counters=counters)
+    state = RunState(run_id=paths.run_id, project_name=config.project_name, status=status, app_version=APP_VERSION, created_at=created_at, config_path=config_path, cli_overrides=cli_overrides, output_root=str(paths.root), config=config.model_dump(mode='json'), artifacts=artifacts, counters=counters)
     write_json(paths.run_json, state.model_dump(mode='json'))
     if config.output.build_zip:
         zip_path = build_research_pack_zip(paths)
@@ -171,7 +171,7 @@ def discover_and_filter(config: RunConfig) -> list[CandidateDecision]:
     raw_candidates = search_provider.search(config)
     video_filter = VideoFilter()
     decisions = video_filter.filter_candidates(raw_candidates, config)
-    logger.info('Candidate filtering complete before subtitle stage: %s', count_decisions(decisions))
+    logger.info('Candidate filtering complete before subtitle pipeline: %s', count_decisions(decisions))
     return decisions
 
 def discover_stable_queue(config: RunConfig) -> list[CandidateDecision]:
@@ -208,7 +208,7 @@ def run_collect(args: argparse.Namespace) -> int:
     created_at = datetime.now().astimezone()
     if config.stability.enabled:
         decisions = discover_stable_queue(config)
-        logger.info('Stage 7.1 stable mode enabled: SQLite state=%s, sleep=%s-%s sec, 429 backoff=%s sec, max_attempts=%s', paths.state_db, config.stability.video_sleep_min_seconds, config.stability.video_sleep_max_seconds, config.stability.rate_limit_backoff_seconds, config.stability.max_attempts_per_video)
+        logger.info('Stable mode enabled: SQLite state=%s, sleep=%s-%s sec, 429 backoff=%s sec, max_attempts=%s', paths.state_db, config.stability.video_sleep_min_seconds, config.stability.video_sleep_max_seconds, config.stability.rate_limit_backoff_seconds, config.stability.max_attempts_per_video)
         store = SQLiteStateStore(paths.state_db)
         store.save_run_info(run_id=paths.run_id, created_at=created_at, config=config, config_path=str(Path(args.config)), cli_overrides=visible_overrides, output_root=str(paths.root))
         store.replace_decisions(decisions)
@@ -216,7 +216,7 @@ def run_collect(args: argparse.Namespace) -> int:
         decisions = worker.run()
     else:
         decisions = discover_and_filter(config)
-        logger.info('Stage 7.1 regular mode: processing in a single pass without stable sleeps/resume.')
+        logger.info('Regular mode enabled: processing in a single pass without stable sleeps/resume.')
         decisions = download_subtitles(config=config, paths=paths, decisions=decisions)
         decisions = clean_transcripts(paths=paths, decisions=decisions)
     counters = build_final_artifacts(config=config, paths=paths, decisions=decisions, created_at=created_at, config_path=str(Path(args.config)), cli_overrides=visible_overrides, status='completed')
@@ -254,7 +254,7 @@ def counters_have_failures(decisions: list[CandidateDecision]) -> bool:
     return any((item.status == VideoStatus.FAILED for item in decisions))
 
 def print_summary(paths: RunPaths, counters: dict[str, int], *, stable: bool) -> None:
-    mode = 'Stage 7.1 stable' if stable else 'Stage 7.1 regular'
+    mode = 'stable' if stable else 'regular'
     print(f'OK: {mode} run completed at {paths.root}')
     print(f'Run ID: {paths.run_id}')
     print(f"Processed videos with clean transcripts: {counters['processed_count']}")

@@ -129,7 +129,7 @@ class StabilityConfig(BaseModel):
     max_attempts_per_video: int = Field(default=3, ge=1, le=10)
     video_sleep_min_seconds: int = Field(default=120, ge=0, le=3600)
     video_sleep_max_seconds: int = Field(default=180, ge=0, le=3600)
-    rate_limit_backoff_seconds: int = Field(default=900, ge=0, le=3600)
+    rate_limit_backoff_seconds: int = Field(default=60, ge=0, le=3600)
     save_partial_results: bool = True
     build_pack_on_partial_success: bool = True
 
@@ -240,7 +240,7 @@ class RunState(BaseModel):
     run_id: str
     project_name: str
     status: Literal['initialized', 'running', 'partial', 'completed', 'failed']
-    stage: Literal['stage_1', 'stage_2b', 'stage_3', 'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_7_1'] = 'stage_7_1'
+    app_version: str
     created_at: datetime
     config_path: str
     cli_overrides: dict[str, Any]
