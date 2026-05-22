@@ -587,4 +587,4 @@ skipped / no_subtitles
 
 **Aleksandr Geints**
 
-GitHub: [@ebobei](https://github.com/ebobei)
+GitHub: [@ebobei](https://github.com/ebobei/VidScribe)
