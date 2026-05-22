@@ -12,39 +12,87 @@ logger = logging.getLogger(__name__)
 class YtDlpSearchError(VidScribeError):
     pass
 
+class YtDlpMetadataError(Exception):
+    pass
+
 class YtDlpSearchProvider:
 
     def search(self, config: RunConfig) -> list[tuple[VideoCandidate, dict[str, Any]]]:
+        return self._search(config, flat=False)
+
+    def search_flat(self, config: RunConfig) -> list[tuple[VideoCandidate, dict[str, Any]]]:
+        return self._search(config, flat=True)
+
+    def _search(self, config: RunConfig, *, flat: bool) -> list[tuple[VideoCandidate, dict[str, Any]]]:
         search_spec = self._build_search_spec(config)
-        cmd = self._build_command(search_spec)
-        logger.info('Searching YouTube via yt-dlp: %s', search_spec)
+        cmd = self._build_command(search_spec, flat=flat)
+        mode = 'flat' if flat else 'full'
+        logger.info('Searching YouTube via yt-dlp %s discovery: %s', mode, search_spec)
         if config.youtube.order not in {YoutubeOrder.RELEVANCE, YoutubeOrder.DATE}:
             logger.warning("yt-dlp search supports the requested order '%s' only as best-effort; using relevance search.", config.youtube.order.value)
-        try:
-            completed = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding='utf-8')
-        except FileNotFoundError as exc:
-            raise YtDlpSearchError('Python executable was not found while trying to run yt-dlp. Run the command through the same Python environment where dependencies are installed.') from exc
-        except OSError as exc:
-            raise YtDlpSearchError(f'Cannot run yt-dlp: {exc}') from exc
+        completed = self._run_command(cmd)
+        raw_items = self._parse_ndjson(completed.stdout)
         if completed.returncode != 0:
             stderr = completed.stderr.strip()
-            if 'No module named yt_dlp' in stderr or 'No module named yt-dlp' in stderr:
-                raise YtDlpSearchError('yt-dlp is not installed in the active Python environment. Run: python -m pip install -r requirements.txt')
-            raise YtDlpSearchError(f'yt-dlp search failed with exit code {completed.returncode}: {stderr}')
-        raw_items = self._parse_ndjson(completed.stdout)
+            self._raise_dependency_error_if_needed(stderr)
+            if not raw_items:
+                raise YtDlpSearchError(f'yt-dlp search failed with exit code {completed.returncode}: {stderr}')
+            logger.warning('yt-dlp search returned exit code %s, but %s partial candidate records were parsed. Continuing with partial discovery. Error: %s', completed.returncode, len(raw_items), stderr)
         candidates: list[tuple[VideoCandidate, dict[str, Any]]] = []
         for index, raw in enumerate(raw_items, start=1):
-            candidate = self._to_candidate(raw, config.query, index)
+            candidate = self.to_candidate(raw, config.query, index)
             candidates.append((candidate, raw))
         logger.info('yt-dlp returned %s candidate metadata records', len(candidates))
         return candidates
+
+    def fetch_metadata(self, candidate: VideoCandidate) -> tuple[VideoCandidate, dict[str, Any]]:
+        cmd = [sys.executable, '-m', 'yt_dlp', '--dump-json', '--skip-download', '--ignore-errors', '--no-warnings', '--no-playlist', candidate.url]
+        try:
+            completed = subprocess.run(cmd, check=False, capture_output=True, text=True, encoding='utf-8')
+        except FileNotFoundError as exc:
+            raise YtDlpMetadataError('Python executable was not found while trying to run yt-dlp. Run the command through the same Python environment where dependencies are installed.') from exc
+        except OSError as exc:
+            raise YtDlpMetadataError(f'Cannot run yt-dlp for {candidate.video_id}: {exc}') from exc
+        raw_items = self._parse_ndjson(completed.stdout)
+        if completed.returncode != 0:
+            stderr = completed.stderr.strip()
+            self._raise_dependency_error_if_needed(stderr)
+            if not raw_items:
+                raise YtDlpMetadataError(f'yt-dlp metadata extraction failed for {candidate.video_id} with exit code {completed.returncode}: {stderr}')
+            logger.warning('yt-dlp metadata extraction returned exit code %s for video_id=%s, but partial JSON was parsed. Continuing.', completed.returncode, candidate.video_id)
+        if not raw_items:
+            stderr = completed.stderr.strip()
+            raise YtDlpMetadataError(f'yt-dlp metadata extraction returned no JSON for {candidate.video_id}: {stderr}')
+        raw = raw_items[0]
+        enriched = self.to_candidate(raw, candidate.search_query, candidate.search_rank)
+        if not enriched.video_id:
+            enriched = enriched.model_copy(update={'video_id': candidate.video_id})
+        if not enriched.url:
+            enriched = enriched.model_copy(update={'url': candidate.url})
+        return (enriched, raw)
 
     def _build_search_spec(self, config: RunConfig) -> str:
         prefix = 'ytsearchdate' if config.youtube.order == YoutubeOrder.DATE else 'ytsearch'
         return f'{prefix}{config.candidate_pool_size}:{config.query}'
 
-    def _build_command(self, search_spec: str) -> list[str]:
-        return [sys.executable, '-m', 'yt_dlp', '--dump-json', '--skip-download', '--ignore-errors', '--no-warnings', '--no-playlist', search_spec]
+    def _build_command(self, search_spec: str, *, flat: bool) -> list[str]:
+        command = [sys.executable, '-m', 'yt_dlp', '--dump-json', '--skip-download', '--ignore-errors', '--no-warnings', '--no-playlist']
+        if flat:
+            command.append('--flat-playlist')
+        command.append(search_spec)
+        return command
+
+    def _run_command(self, cmd: list[str]) -> subprocess.CompletedProcess[str]:
+        try:
+            return subprocess.run(cmd, check=False, capture_output=True, text=True, encoding='utf-8')
+        except FileNotFoundError as exc:
+            raise YtDlpSearchError('Python executable was not found while trying to run yt-dlp. Run the command through the same Python environment where dependencies are installed.') from exc
+        except OSError as exc:
+            raise YtDlpSearchError(f'Cannot run yt-dlp: {exc}') from exc
+
+    def _raise_dependency_error_if_needed(self, stderr: str) -> None:
+        if 'No module named yt_dlp' in stderr or 'No module named yt-dlp' in stderr:
+            raise YtDlpSearchError('yt-dlp is not installed in the active Python environment. Run: python -m pip install -r requirements.txt')
 
     def _parse_ndjson(self, stdout: str) -> list[dict[str, Any]]:
         items: list[dict[str, Any]] = []
@@ -61,9 +109,11 @@ class YtDlpSearchProvider:
                 items.append(payload)
         return items
 
-    def _to_candidate(self, raw: dict[str, Any], search_query: str, search_rank: int) -> VideoCandidate:
-        video_id = str(raw.get('id') or '').strip()
-        webpage_url = str(raw.get('webpage_url') or raw.get('original_url') or '').strip()
+    def to_candidate(self, raw: dict[str, Any], search_query: str, search_rank: int) -> VideoCandidate:
+        video_id = str(raw.get('id') or raw.get('url') or '').strip()
+        if video_id.startswith('http'):
+            video_id = ''
+        webpage_url = str(raw.get('webpage_url') or raw.get('original_url') or raw.get('url') or '').strip()
         if video_id and (not webpage_url.startswith('http')):
             webpage_url = f'https://www.youtube.com/watch?v={video_id}'
         title = str(raw.get('title') or '').strip()

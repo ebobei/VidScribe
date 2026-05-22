@@ -25,7 +25,7 @@ from app.subtitles.subtitle_selector import SubtitleSelector
 from app.subtitles.ytdlp_client import YtDlpSubtitleDownloader, YtDlpSubtitleError, YtDlpSubtitleNoFileError
 from app.worker.stable_worker import StableWorker
 APP_NAME = 'VidScribe'
-APP_VERSION = '0.7.0-stage7'
+APP_VERSION = '0.7.1-stage7.1'
 logger = logging.getLogger(__name__)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -156,10 +156,10 @@ def build_final_artifacts(*, config: RunConfig, paths: RunPaths, decisions: list
         write_summary_input_md(paths.summary_input_md, config=config, paths=paths, created_at=created_at, decisions=decisions, transcript_documents=transcript_documents, chunks=chunks, counters=counters)
         logger.info('summary_input.md written: %s', paths.summary_input_md)
     artifacts = build_stage7_artifacts(paths, config)
-    manifest = build_manifest(config=config, paths=paths, created_at=created_at, decisions=decisions, artifacts=artifacts, transcript_documents=transcript_documents, chunks=chunks, stage='stage_7')
+    manifest = build_manifest(config=config, paths=paths, created_at=created_at, decisions=decisions, artifacts=artifacts, transcript_documents=transcript_documents, chunks=chunks, stage='stage_7_1')
     manifest['status'] = status
     write_json(paths.manifest_json, manifest)
-    state = RunState(run_id=paths.run_id, project_name=config.project_name, status=status, stage='stage_7', created_at=created_at, config_path=config_path, cli_overrides=cli_overrides, output_root=str(paths.root), config=config.model_dump(mode='json'), artifacts=artifacts, counters=counters)
+    state = RunState(run_id=paths.run_id, project_name=config.project_name, status=status, stage='stage_7_1', created_at=created_at, config_path=config_path, cli_overrides=cli_overrides, output_root=str(paths.root), config=config.model_dump(mode='json'), artifacts=artifacts, counters=counters)
     write_json(paths.run_json, state.model_dump(mode='json'))
     if config.output.build_zip:
         zip_path = build_research_pack_zip(paths)
@@ -172,6 +172,23 @@ def discover_and_filter(config: RunConfig) -> list[CandidateDecision]:
     video_filter = VideoFilter()
     decisions = video_filter.filter_candidates(raw_candidates, config)
     logger.info('Candidate filtering complete before subtitle stage: %s', count_decisions(decisions))
+    return decisions
+
+def discover_stable_queue(config: RunConfig) -> list[CandidateDecision]:
+    search_provider = YtDlpSearchProvider()
+    raw_candidates = search_provider.search_flat(config)
+    decisions: list[CandidateDecision] = []
+    seen_video_ids: set[str] = set()
+    for candidate, raw in raw_candidates:
+        if not candidate.video_id or not candidate.url or not candidate.title:
+            decisions.append(CandidateDecision(candidate=candidate, raw_metadata=raw, status=VideoStatus.SKIPPED, reason=SkipReason.METADATA_ERROR, error_message='Flat discovery returned incomplete video metadata.'))
+            continue
+        if candidate.video_id in seen_video_ids:
+            decisions.append(CandidateDecision(candidate=candidate, raw_metadata=raw, status=VideoStatus.SKIPPED, reason=SkipReason.DUPLICATE, error_message='Duplicate video_id returned by discovery.'))
+            continue
+        seen_video_ids.add(candidate.video_id)
+        decisions.append(CandidateDecision(candidate=candidate, raw_metadata=raw, status=VideoStatus.PROCESSED))
+    logger.info('Stable flat discovery complete: %s', count_decisions(decisions))
     return decisions
 
 def run_collect(args: argparse.Namespace) -> int:
@@ -189,16 +206,17 @@ def run_collect(args: argparse.Namespace) -> int:
     if config.limit > 20 or config.candidate_pool_size > 60:
         logger.warning('Large collection detected: limit=%s candidate_pool_size=%s. Stable mode is recommended.', config.limit, config.candidate_pool_size)
     created_at = datetime.now().astimezone()
-    decisions = discover_and_filter(config)
     if config.stability.enabled:
-        logger.info('Stage 7 stable mode enabled: SQLite state=%s, sleep=%s-%s sec, 429 backoff=%s sec, max_attempts=%s', paths.state_db, config.stability.video_sleep_min_seconds, config.stability.video_sleep_max_seconds, config.stability.rate_limit_backoff_seconds, config.stability.max_attempts_per_video)
+        decisions = discover_stable_queue(config)
+        logger.info('Stage 7.1 stable mode enabled: SQLite state=%s, sleep=%s-%s sec, 429 backoff=%s sec, max_attempts=%s', paths.state_db, config.stability.video_sleep_min_seconds, config.stability.video_sleep_max_seconds, config.stability.rate_limit_backoff_seconds, config.stability.max_attempts_per_video)
         store = SQLiteStateStore(paths.state_db)
         store.save_run_info(run_id=paths.run_id, created_at=created_at, config=config, config_path=str(Path(args.config)), cli_overrides=visible_overrides, output_root=str(paths.root))
         store.replace_decisions(decisions)
         worker = StableWorker(config=config, paths=paths, store=store)
         decisions = worker.run()
     else:
-        logger.info('Stage 7 regular mode: processing in a single pass without stable sleeps/resume.')
+        decisions = discover_and_filter(config)
+        logger.info('Stage 7.1 regular mode: processing in a single pass without stable sleeps/resume.')
         decisions = download_subtitles(config=config, paths=paths, decisions=decisions)
         decisions = clean_transcripts(paths=paths, decisions=decisions)
     counters = build_final_artifacts(config=config, paths=paths, decisions=decisions, created_at=created_at, config_path=str(Path(args.config)), cli_overrides=visible_overrides, status='completed')
@@ -236,7 +254,7 @@ def counters_have_failures(decisions: list[CandidateDecision]) -> bool:
     return any((item.status == VideoStatus.FAILED for item in decisions))
 
 def print_summary(paths: RunPaths, counters: dict[str, int], *, stable: bool) -> None:
-    mode = 'Stage 7 stable' if stable else 'Stage 7 regular'
+    mode = 'Stage 7.1 stable' if stable else 'Stage 7.1 regular'
     print(f'OK: {mode} run completed at {paths.root}')
     print(f'Run ID: {paths.run_id}')
     print(f"Processed videos with clean transcripts: {counters['processed_count']}")

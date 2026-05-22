@@ -32,6 +32,9 @@ class SkipReason(str, Enum):
     YT_DLP_ERROR = 'yt_dlp_error'
     SUBTITLE_CLEANING_ERROR = 'subtitle_cleaning_error'
     RATE_LIMITED = 'rate_limited'
+    AGE_RESTRICTED = 'age_restricted'
+    UNAVAILABLE = 'unavailable'
+    LIMIT_REACHED = 'limit_reached'
     METADATA_ERROR = 'metadata_error'
 
 class SubtitleType(str, Enum):
@@ -237,7 +240,7 @@ class RunState(BaseModel):
     run_id: str
     project_name: str
     status: Literal['initialized', 'running', 'partial', 'completed', 'failed']
-    stage: Literal['stage_1', 'stage_2b', 'stage_3', 'stage_4', 'stage_5', 'stage_6', 'stage_7'] = 'stage_7'
+    stage: Literal['stage_1', 'stage_2b', 'stage_3', 'stage_4', 'stage_5', 'stage_6', 'stage_7', 'stage_7_1'] = 'stage_7_1'
     created_at: datetime
     config_path: str
     cli_overrides: dict[str, Any]
