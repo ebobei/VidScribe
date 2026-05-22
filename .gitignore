@@ -25,3 +25,6 @@ Thumbs.db
 
 # PATCH
 *.patch
+
+# Local/private research configs
+requests/
