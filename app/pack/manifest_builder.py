@@ -1,4 +1,4 @@
-"""Manifest artifact builder for VidScribe Stage 6."""
+"""Manifest artifact builder for VidScribe."""
 
 from __future__ import annotations
 
@@ -19,6 +19,7 @@ def build_manifest(
     artifacts: list[RunArtifact],
     transcript_documents: list[TranscriptDocument],
     chunks: list[RagChunk],
+    stage: str = "stage_7",
 ) -> dict[str, Any]:
     processed = [item for item in decisions if item.status == VideoStatus.PROCESSED]
     skipped = [item for item in decisions if item.status == VideoStatus.SKIPPED]
@@ -32,7 +33,7 @@ def build_manifest(
     return {
         "run_id": paths.run_id,
         "project_name": config.project_name,
-        "stage": "stage_6",
+        "stage": stage,
         "status": "completed",
         "collected_at": created_at.isoformat(),
         "query": config.query,
@@ -40,11 +41,13 @@ def build_manifest(
         "subtitle_provider": "yt-dlp",
         "transcript_cleaner": "local-vtt-srt-cleaner",
         "chunk_builder": "local-word-window-jsonl",
+        "state_store": "SQLite state.sqlite" if stage == "stage_7" else None,
         "search_note": (
-            "Stage 6 uses local yt-dlp search/extraction instead of Google Cloud / YouTube Data API. "
+            "VidScribe uses local yt-dlp search/extraction instead of Google Cloud / YouTube Data API. "
             "Video and audio files are not downloaded. Subtitle commands always use --skip-download. "
             "Raw subtitle files are cleaned locally into transcripts_clean/*.txt, then converted into "
-            "chunks/chunks.jsonl without embeddings or a vector DB. Stage 6 also builds summary_input.md and research_pack.zip."
+            "chunks/chunks.jsonl without embeddings or a vector DB. Stage 7 can process videos one by one "
+            "with SQLite state, pauses, retry and partial result packaging."
         ),
         "config": config.model_dump(mode="json"),
         "chunking": {
@@ -56,6 +59,7 @@ def build_manifest(
                 "They may be null when timing data cannot be parsed."
             ),
         },
+        "stability": config.stability.model_dump(mode="json"),
         "summary": {
             "total_candidates_written": len(decisions),
             "processed_count": len(processed),

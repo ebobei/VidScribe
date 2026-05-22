@@ -19,6 +19,7 @@ class RunPaths:
     transcripts_clean_dir: Path
     chunks_dir: Path
     logs_dir: Path
+    state_db: Path
     run_json: Path
     manifest_json: Path
     videos_csv: Path
@@ -38,6 +39,42 @@ def slugify_project_name(project_name: str) -> str:
     return value or "vidscribe_run"
 
 
+def build_run_paths_from_root(root: str | Path) -> RunPaths:
+    root_path = Path(root)
+    return RunPaths(
+        run_id=root_path.name,
+        root=root_path,
+        metadata_dir=root_path / "metadata",
+        subtitles_raw_dir=root_path / "subtitles_raw",
+        transcripts_clean_dir=root_path / "transcripts_clean",
+        chunks_dir=root_path / "chunks",
+        logs_dir=root_path / "logs",
+        state_db=root_path / "state.sqlite",
+        run_json=root_path / "run.json",
+        manifest_json=root_path / "manifest.json",
+        videos_csv=root_path / "videos.csv",
+        summary_input_md=root_path / "summary_input.md",
+        chunks_jsonl=root_path / "chunks" / "chunks.jsonl",
+        collect_log=root_path / "logs" / "collect.log",
+        research_pack_zip=root_path / "research_pack.zip",
+    )
+
+
+def ensure_run_directories(paths: RunPaths) -> None:
+    try:
+        for directory in [
+            paths.root,
+            paths.metadata_dir,
+            paths.subtitles_raw_dir,
+            paths.transcripts_clean_dir,
+            paths.chunks_dir,
+            paths.logs_dir,
+        ]:
+            directory.mkdir(parents=True, exist_ok=True)
+    except OSError as exc:
+        raise PathPreparationError(f"Cannot create output directories under {paths.root}: {exc}") from exc
+
+
 def create_run_paths(base_directory: str | Path, project_name: str, now: datetime | None = None) -> RunPaths:
     timestamp = (now or datetime.now().astimezone()).strftime("%Y-%m-%d_%H%M")
     slug = slugify_project_name(project_name)
@@ -50,36 +87,14 @@ def create_run_paths(base_directory: str | Path, project_name: str, now: datetim
         root = base / f"{run_id_base}_{suffix}"
         suffix += 1
 
-    run_id = root.name
+    paths = build_run_paths_from_root(root)
+    ensure_run_directories(paths)
+    return paths
 
-    paths = RunPaths(
-        run_id=run_id,
-        root=root,
-        metadata_dir=root / "metadata",
-        subtitles_raw_dir=root / "subtitles_raw",
-        transcripts_clean_dir=root / "transcripts_clean",
-        chunks_dir=root / "chunks",
-        logs_dir=root / "logs",
-        run_json=root / "run.json",
-        manifest_json=root / "manifest.json",
-        videos_csv=root / "videos.csv",
-        summary_input_md=root / "summary_input.md",
-        chunks_jsonl=root / "chunks" / "chunks.jsonl",
-        collect_log=root / "logs" / "collect.log",
-        research_pack_zip=root / "research_pack.zip",
-    )
 
-    try:
-        for directory in [
-            paths.root,
-            paths.metadata_dir,
-            paths.subtitles_raw_dir,
-            paths.transcripts_clean_dir,
-            paths.chunks_dir,
-            paths.logs_dir,
-        ]:
-            directory.mkdir(parents=True, exist_ok=True)
-    except OSError as exc:
-        raise PathPreparationError(f"Cannot create output directories under {root}: {exc}") from exc
-
+def load_existing_run_paths(run_dir: str | Path) -> RunPaths:
+    paths = build_run_paths_from_root(run_dir)
+    if not paths.root.exists() or not paths.root.is_dir():
+        raise PathPreparationError(f"Run directory does not exist: {paths.root}")
+    ensure_run_directories(paths)
     return paths

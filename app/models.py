@@ -1,9 +1,8 @@
 """Pydantic models used by VidScribe.
 
-Stage 6 keeps the project narrow: local CLI, YAML configs, yt-dlp based
-YouTube metadata collection, subtitle downloading, clean transcript generation,
-local JSONL chunking and final research pack artifacts without Google Cloud /
-API keys.
+Stage 7 keeps the project local and narrow: CLI, YAML configs, yt-dlp based
+YouTube metadata/subtitle collection, local transcript cleaning, local JSONL
+chunking and stable overnight collection via SQLite state.
 """
 
 from __future__ import annotations
@@ -27,7 +26,7 @@ class DurationMode(str, Enum):
 class YoutubeOrder(str, Enum):
     """Supported user-facing ordering values.
 
-    Stage 2b maps relevance/date to yt-dlp search prefixes. Other values are
+    Stage 2b+ maps relevance/date to yt-dlp search prefixes. Other values are
     accepted for config compatibility but treated as best-effort relevance.
     """
 
@@ -53,6 +52,7 @@ class SkipReason(str, Enum):
     DUPLICATE = "duplicate"
     YT_DLP_ERROR = "yt_dlp_error"
     SUBTITLE_CLEANING_ERROR = "subtitle_cleaning_error"
+    RATE_LIMITED = "rate_limited"
     METADATA_ERROR = "metadata_error"
 
 
@@ -156,6 +156,30 @@ class SafetyConfig(BaseModel):
     public_dataset: Literal[False] = False
 
 
+class StabilityConfig(BaseModel):
+    """Local overnight collection settings.
+
+    This is intentionally not a distributed queue. SQLite keeps state on disk,
+    and one slow worker processes videos one by one.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    max_attempts_per_video: int = Field(default=3, ge=1, le=10)
+    video_sleep_min_seconds: int = Field(default=120, ge=0, le=3600)
+    video_sleep_max_seconds: int = Field(default=180, ge=0, le=3600)
+    rate_limit_backoff_seconds: int = Field(default=900, ge=0, le=3600)
+    save_partial_results: bool = True
+    build_pack_on_partial_success: bool = True
+
+    @model_validator(mode="after")
+    def validate_sleep_range(self) -> StabilityConfig:
+        if self.video_sleep_min_seconds > self.video_sleep_max_seconds:
+            raise ValueError("stability.video_sleep_min_seconds must be <= stability.video_sleep_max_seconds")
+        return self
+
+
 class RunConfig(BaseModel):
     """Validated run configuration loaded from YAML plus CLI overrides."""
 
@@ -170,6 +194,7 @@ class RunConfig(BaseModel):
     youtube: YoutubeConfig = Field(default_factory=YoutubeConfig)
     output: OutputConfig = Field(default_factory=OutputConfig)
     safety: SafetyConfig = Field(default_factory=SafetyConfig)
+    stability: StabilityConfig = Field(default_factory=StabilityConfig)
 
     @field_validator("project_name")
     @classmethod
@@ -272,8 +297,8 @@ class RunState(BaseModel):
 
     run_id: str
     project_name: str
-    status: Literal["initialized", "completed", "failed"]
-    stage: Literal["stage_1", "stage_2b", "stage_3", "stage_4", "stage_5", "stage_6"] = "stage_6"
+    status: Literal["initialized", "running", "partial", "completed", "failed"]
+    stage: Literal["stage_1", "stage_2b", "stage_3", "stage_4", "stage_5", "stage_6", "stage_7"] = "stage_7"
     created_at: datetime
     config_path: str
     cli_overrides: dict[str, Any]
