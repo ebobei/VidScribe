@@ -25,7 +25,7 @@ from app.subtitles.subtitle_selector import SubtitleSelector
 from app.subtitles.ytdlp_client import YtDlpSubtitleDownloader, YtDlpSubtitleError, YtDlpSubtitleNoFileError
 from app.worker.stable_worker import StableWorker
 APP_NAME = 'VidScribe'
-APP_VERSION = '0.7.2'
+APP_VERSION = '0.7.3'
 logger = logging.getLogger(__name__)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -56,10 +56,10 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def build_run_artifacts(paths: RunPaths, config: RunConfig) -> list[RunArtifact]:
     artifacts = [RunArtifact(name='run.json', path=paths.relative_to_root(paths.run_json), description='Resolved run metadata and counters.'), RunArtifact(name='manifest.json', path=paths.relative_to_root(paths.manifest_json), description='Main manifest with query, counters, videos, transcript info and chunk info.'), RunArtifact(name='videos.csv', path=paths.relative_to_root(paths.videos_csv), description='Video candidates with processed/skipped/failed statuses and reasons.'), RunArtifact(name='state.sqlite', path=paths.relative_to_root(paths.state_db), description='SQLite state for stable runs, resume and attempt history.'), RunArtifact(name='metadata/', path=paths.relative_to_root(paths.metadata_dir), description='Raw yt-dlp metadata JSON files for videos with downloaded subtitles.'), RunArtifact(name='subtitles_raw/', path=paths.relative_to_root(paths.subtitles_raw_dir), description='Raw selected subtitle files downloaded through yt-dlp with --skip-download.'), RunArtifact(name='transcripts_clean/', path=paths.relative_to_root(paths.transcripts_clean_dir), description='Cleaned plain-text transcripts generated from raw subtitle files.'), RunArtifact(name='chunks/chunks.jsonl', path=paths.relative_to_root(paths.chunks_jsonl), description='RAG-ready JSONL chunks generated from clean transcripts.')]
     if config.output.build_summary_md:
-        artifacts.append(RunArtifact(name='summary_input.md', path=paths.relative_to_root(paths.summary_input_md), description='AI-ready input file with only successfully processed video transcripts and minimal source context.'))
+        artifacts.append(RunArtifact(name='summary_input.md', path=paths.relative_to_root(paths.summary_input_md), description='AI-ready combined transcript file with successfully processed videos and timestamps when available.'))
     artifacts.append(RunArtifact(name='collect.log', path=paths.relative_to_root(paths.collect_log), description='CLI log file for this collection run.'))
     if config.output.build_zip:
-        artifacts.append(RunArtifact(name='research_pack.zip', path=paths.relative_to_root(paths.research_pack_zip), description='AI-ready ZIP archive containing only the analysis input, without logs or diagnostic files.'))
+        artifacts.append(RunArtifact(name='research_pack.zip', path=paths.relative_to_root(paths.research_pack_zip), description='AI-ready ZIP archive with README.md, manifest.json, combined_transcripts.md, processing_summary.md and timestamped transcripts/*.md.'))
     return artifacts
 
 def write_collected_metadata(paths: RunPaths, decisions: list[CandidateDecision]) -> None:
@@ -153,7 +153,7 @@ def build_final_artifacts(*, config: RunConfig, paths: RunPaths, decisions: list
     write_collected_metadata(paths, decisions)
     write_videos_csv(paths.videos_csv, decisions, chunks_by_video=chunks_by_video)
     if config.output.build_summary_md:
-        write_summary_input_md(paths.summary_input_md, config=config, paths=paths, created_at=created_at, decisions=decisions, transcript_documents=transcript_documents, chunks=chunks, counters=counters)
+        write_summary_input_md(paths.summary_input_md, config=config, paths=paths, created_at=created_at, decisions=decisions, transcript_documents=transcript_documents, chunks=chunks, counters=counters, app_version=APP_VERSION)
         logger.info('summary_input.md written: %s', paths.summary_input_md)
     artifacts = build_run_artifacts(paths, config)
     manifest = build_manifest(config=config, paths=paths, created_at=created_at, decisions=decisions, artifacts=artifacts, transcript_documents=transcript_documents, chunks=chunks)
@@ -162,7 +162,7 @@ def build_final_artifacts(*, config: RunConfig, paths: RunPaths, decisions: list
     state = RunState(run_id=paths.run_id, project_name=config.project_name, status=status, app_version=APP_VERSION, created_at=created_at, config_path=config_path, cli_overrides=cli_overrides, output_root=str(paths.root), config=config.model_dump(mode='json'), artifacts=artifacts, counters=counters)
     write_json(paths.run_json, state.model_dump(mode='json'))
     if config.output.build_zip:
-        zip_path = build_research_pack_zip(paths)
+        zip_path = build_research_pack_zip(paths=paths, config=config, decisions=decisions, chunks=chunks, created_at=created_at, app_version=APP_VERSION)
         logger.info('research_pack.zip written: %s', zip_path)
     return counters
 

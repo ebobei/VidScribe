@@ -22,6 +22,7 @@ VidScribe умеет:
 - создавать чанки в `chunks/chunks.jsonl`;
 - собирать `summary_input.md` для загрузки в AI;
 - собирать чистый AI-архив `research_pack.zip` без логов и технического шума;
+- сохранять таймкоды в AI-архиве, если они доступны в исходных `.vtt` / `.srt`;
 - запускаться в стабильном ночном режиме с SQLite-state, паузами, retry и resume.
 
 ---
@@ -521,8 +522,8 @@ output/example_research/example_research_2026-05-22_1840/
 
 Главные файлы:
 
-- `summary_input.md` — основной файл для AI: только успешно обработанные видео и очищенные транскрипты;
-- `research_pack.zip` — чистый AI-архив, обычно содержит только `summary_input.md`;
+- `summary_input.md` — основной combined-файл для AI: только успешно обработанные видео, источник и транскрипты с таймкодами, если они доступны;
+- `research_pack.zip` — чистый AI-архив с README, manifest, combined transcript, processing summary и отдельными transcript-файлами;
 - `videos.csv` — диагностическая таблица видео, статусов и причин пропуска;
 - `state.sqlite` — локальное состояние стабильного запуска для resume;
 - `transcripts_clean/*.txt` — очищенные транскрипты, рабочие файлы вне архива;
@@ -550,7 +551,7 @@ output/example_research/example_research_2026-05-22_1840/
    - какие видео были наиболее информативными;
    - что стоит проверить отдельно.
 
-`summary_input.md` специально сделан человекочитаемым и не содержит список failed/skipped-видео, логи, raw subtitles, JSON metadata или другие диагностические детали.
+`summary_input.md` специально сделан человекочитаемым и не содержит список failed/skipped-видео, логи, raw subtitles, JSON metadata или другие диагностические детали. Если в исходных субтитрах были таймкоды, они сохраняются в формате `[HH:MM:SS] text`.
 
 ---
 
@@ -580,27 +581,37 @@ output/example_research/example_research_2026-05-22_1840/
 
 `research_pack.zip` — это чистый пакет для AI-анализа, а не технический архив всего запуска.
 
-Обычно внутри только:
+Внутри:
 
 ```text
 research_pack.zip
-  summary_input.md
+  README.md
+  manifest.json
+  combined_transcripts.md
+  processing_summary.md
+  transcripts/
+    001_video_title.md
+    002_video_title.md
 ```
 
-`summary_input.md` содержит только контекст разбираемого вопроса:
+`combined_transcripts.md` — главный файл для AI. В нём есть поисковый запрос, source index и все успешно обработанные транскрипты с разделителями между видео.
 
-- поисковый запрос;
-- список успешно обработанных видео;
-- название видео;
-- канал;
-- ссылку на видео;
-- язык и тип субтитров;
-- очищенный транскрипт.
+`transcripts/*.md` — отдельный Markdown-файл на каждое успешно обработанное видео. В каждом файле есть название, канал, URL, язык и тип субтитров, формальные quality flags и сам транскрипт.
+
+Если в исходных `.vtt` / `.srt` были таймкоды, в AI-архиве они сохраняются в формате:
+
+```text
+[00:02:14] transcript text...
+```
+
+`manifest.json` внутри архива содержит только metadata по видео, которые реально попали в AI-pack. Это не debug-manifest всего запуска.
+
+`processing_summary.md` содержит короткую техническую сводку по AI-архиву: сколько видео включено, сколько слов/символов, какие quality flags встретились. Он не содержит логи и не делает смысловой анализ.
 
 В архив специально не кладутся:
 
 - `run.json`;
-- `manifest.json`;
+- технический `manifest.json` из папки запуска;
 - `videos.csv`;
 - `state.sqlite`;
 - `logs/`;
