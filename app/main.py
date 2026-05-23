@@ -25,7 +25,7 @@ from app.subtitles.subtitle_selector import SubtitleSelector
 from app.subtitles.ytdlp_client import YtDlpSubtitleDownloader, YtDlpSubtitleError, YtDlpSubtitleNoFileError
 from app.worker.stable_worker import StableWorker
 APP_NAME = 'VidScribe'
-APP_VERSION = '0.7.3'
+APP_VERSION = '0.7.4'
 logger = logging.getLogger(__name__)
 
 def build_parser() -> argparse.ArgumentParser:
@@ -59,7 +59,7 @@ def build_run_artifacts(paths: RunPaths, config: RunConfig) -> list[RunArtifact]
         artifacts.append(RunArtifact(name='summary_input.md', path=paths.relative_to_root(paths.summary_input_md), description='AI-ready combined transcript file with successfully processed videos and timestamps when available.'))
     artifacts.append(RunArtifact(name='collect.log', path=paths.relative_to_root(paths.collect_log), description='CLI log file for this collection run.'))
     if config.output.build_zip:
-        artifacts.append(RunArtifact(name='research_pack.zip', path=paths.relative_to_root(paths.research_pack_zip), description='AI-ready ZIP archive with README.md, manifest.json, combined_transcripts.md, processing_summary.md and timestamped transcripts/*.md.'))
+        artifacts.append(RunArtifact(name='research_pack.zip', path=paths.relative_to_root(paths.research_pack_zip), description='AI-ready ZIP archive with README.md, analysis_prompt.md, manifest.json, combined_transcripts.md, processing_summary.md and timestamped transcripts/*.md.'))
     return artifacts
 
 def write_collected_metadata(paths: RunPaths, decisions: list[CandidateDecision]) -> None:

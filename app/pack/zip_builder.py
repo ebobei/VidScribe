@@ -4,7 +4,7 @@ from pathlib import Path
 from datetime import datetime
 from app.errors import VidScribeError
 from app.models import RagChunk, RunConfig
-from app.pack.ai_pack_builder import build_ai_manifest, build_ai_readme_md, build_ai_transcript_records, build_combined_transcripts_md, build_individual_transcript_md, build_processing_summary_md, manifest_json_text
+from app.pack.ai_pack_builder import build_ai_manifest, build_ai_readme_md, build_ai_transcript_records, build_analysis_prompt_md, build_combined_transcripts_md, build_individual_transcript_md, build_processing_summary_md, manifest_json_text
 from app.paths import RunPaths
 from app.search.video_filter import CandidateDecision
 
@@ -25,6 +25,7 @@ def build_research_pack_zip(*, paths: RunPaths, config: RunConfig, decisions: li
             archive.writestr('manifest.json', manifest_json_text(build_ai_manifest(config=config, records=records, created_at=created_at, app_version=app_version)))
             archive.writestr('combined_transcripts.md', build_combined_transcripts_md(config=config, records=records, created_at=created_at, app_version=app_version))
             archive.writestr('processing_summary.md', build_processing_summary_md(config=config, records=records, decisions=decisions, created_at=created_at))
+            archive.writestr('analysis_prompt.md', build_analysis_prompt_md(config=config, records=records, created_at=created_at, app_version=app_version))
             for record in records:
                 archive.writestr(record.transcript_file, build_individual_transcript_md(record))
     except OSError as exc:

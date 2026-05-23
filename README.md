@@ -22,6 +22,7 @@ VidScribe умеет:
 - создавать чанки в `chunks/chunks.jsonl`;
 - собирать `summary_input.md` для загрузки в AI;
 - собирать чистый AI-архив `research_pack.zip` без логов и технического шума;
+- добавлять в AI-архив необязательную подсказку `analysis_prompt.md` для широкого структурированного анализа;
 - сохранять таймкоды в AI-архиве, если они доступны в исходных `.vtt` / `.srt`;
 - запускаться в стабильном ночном режиме с SQLite-state, паузами, retry и resume.
 
@@ -523,7 +524,7 @@ output/example_research/example_research_2026-05-22_1840/
 Главные файлы:
 
 - `summary_input.md` — основной combined-файл для AI: только успешно обработанные видео, источник и транскрипты с таймкодами, если они доступны;
-- `research_pack.zip` — чистый AI-архив с README, manifest, combined transcript, processing summary и отдельными transcript-файлами;
+- `research_pack.zip` — чистый AI-архив с README, optional analysis prompt, manifest, combined transcript, processing summary и отдельными transcript-файлами;
 - `videos.csv` — диагностическая таблица видео, статусов и причин пропуска;
 - `state.sqlite` — локальное состояние стабильного запуска для resume;
 - `transcripts_clean/*.txt` — очищенные транскрипты, рабочие файлы вне архива;
@@ -544,6 +545,9 @@ output/example_research/example_research_2026-05-22_1840/
 4. Загрузить файл в AI.
 
 Для обычного анализа лучше использовать `summary_input.md` или `research_pack.zip`. Технические файлы из `output/` нужны для проверки и отладки, но не для понимания содержания видео.
+
+Внутри `research_pack.zip` есть `analysis_prompt.md`. Это необязательная подсказка для AI, а не обязательная инструкция. Если пользователь задаёт конкретный вопрос, AI должен отвечать на вопрос пользователя. Если пользователь просит широкий анализ архива, `analysis_prompt.md` предлагает структуру анализа: topics index, top sources, noise report и evidence map.
+
 5. Попросить проанализировать:
    - какие мнения повторяются;
    - какие проблемы чаще всего называют;
@@ -552,6 +556,37 @@ output/example_research/example_research_2026-05-22_1840/
    - что стоит проверить отдельно.
 
 `summary_input.md` специально сделан человекочитаемым и не содержит список failed/skipped-видео, логи, raw subtitles, JSON metadata или другие диагностические детали. Если в исходных субтитрах были таймкоды, они сохраняются в формате `[HH:MM:SS] text`.
+
+---
+
+## Что лежит внутри `research_pack.zip`
+
+`research_pack.zip` — это чистый AI-ready архив. Он не содержит debug-логи, `state.sqlite`, `videos.csv`, raw metadata или служебные файлы запуска.
+
+Состав архива:
+
+```text
+research_pack.zip
+  README.md
+  analysis_prompt.md
+  manifest.json
+  combined_transcripts.md
+  processing_summary.md
+  transcripts/
+    001_video_title.md
+    002_video_title.md
+```
+
+Файлы внутри архива:
+
+- `README.md` — краткое описание пакета и список включённых источников;
+- `analysis_prompt.md` — необязательная подсказка для широкого структурированного анализа в AI;
+- `manifest.json` — структурированное описание включённых видео;
+- `combined_transcripts.md` — все включённые транскрипты в одном Markdown-файле;
+- `processing_summary.md` — короткая техническая сводка без debug-логов;
+- `transcripts/*.md` — отдельный Markdown-транскрипт на каждое обработанное видео.
+
+`analysis_prompt.md` не должен переопределять пользовательский запрос. Он нужен для случая, когда пользователь просто загружает архив и просит сделать полный исследовательский разбор.
 
 ---
 
