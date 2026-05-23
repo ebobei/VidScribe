@@ -42,7 +42,7 @@ def build_parser() -> argparse.ArgumentParser:
     resume = subparsers.add_parser('resume', help='Resume a stable run from an existing output run directory.')
     resume.add_argument('--run-dir', required=True, help='Path to an existing output run directory with state.sqlite.')
     resume.add_argument('--verbose', action='store_true', help='Enable verbose logging.')
-    pack = subparsers.add_parser('pack', help='Rebuild videos.csv, summary_input.md, manifest.json and research_pack.zip from an existing stable run.')
+    pack = subparsers.add_parser('pack', help='Rebuild videos.csv, summary_input.md, manifest.json and the AI-ready research_pack.zip from an existing stable run.')
     pack.add_argument('--run-dir', required=True, help='Path to an existing output run directory with state.sqlite.')
     pack.add_argument('--verbose', action='store_true', help='Enable verbose logging.')
     return parser
@@ -56,10 +56,10 @@ def write_json(path: Path, payload: dict[str, Any]) -> None:
 def build_run_artifacts(paths: RunPaths, config: RunConfig) -> list[RunArtifact]:
     artifacts = [RunArtifact(name='run.json', path=paths.relative_to_root(paths.run_json), description='Resolved run metadata and counters.'), RunArtifact(name='manifest.json', path=paths.relative_to_root(paths.manifest_json), description='Main manifest with query, counters, videos, transcript info and chunk info.'), RunArtifact(name='videos.csv', path=paths.relative_to_root(paths.videos_csv), description='Video candidates with processed/skipped/failed statuses and reasons.'), RunArtifact(name='state.sqlite', path=paths.relative_to_root(paths.state_db), description='SQLite state for stable runs, resume and attempt history.'), RunArtifact(name='metadata/', path=paths.relative_to_root(paths.metadata_dir), description='Raw yt-dlp metadata JSON files for videos with downloaded subtitles.'), RunArtifact(name='subtitles_raw/', path=paths.relative_to_root(paths.subtitles_raw_dir), description='Raw selected subtitle files downloaded through yt-dlp with --skip-download.'), RunArtifact(name='transcripts_clean/', path=paths.relative_to_root(paths.transcripts_clean_dir), description='Cleaned plain-text transcripts generated from raw subtitle files.'), RunArtifact(name='chunks/chunks.jsonl', path=paths.relative_to_root(paths.chunks_jsonl), description='RAG-ready JSONL chunks generated from clean transcripts.')]
     if config.output.build_summary_md:
-        artifacts.append(RunArtifact(name='summary_input.md', path=paths.relative_to_root(paths.summary_input_md), description='Human-readable research input file with run context, video table and clean transcripts.'))
+        artifacts.append(RunArtifact(name='summary_input.md', path=paths.relative_to_root(paths.summary_input_md), description='AI-ready input file with only successfully processed video transcripts and minimal source context.'))
     artifacts.append(RunArtifact(name='collect.log', path=paths.relative_to_root(paths.collect_log), description='CLI log file for this collection run.'))
     if config.output.build_zip:
-        artifacts.append(RunArtifact(name='research_pack.zip', path=paths.relative_to_root(paths.research_pack_zip), description='ZIP archive containing the local research pack for this run.'))
+        artifacts.append(RunArtifact(name='research_pack.zip', path=paths.relative_to_root(paths.research_pack_zip), description='AI-ready ZIP archive containing only the analysis input, without logs or diagnostic files.'))
     return artifacts
 
 def write_collected_metadata(paths: RunPaths, decisions: list[CandidateDecision]) -> None:
